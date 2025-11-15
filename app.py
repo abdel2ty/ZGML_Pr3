@@ -1,36 +1,68 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsRegressor
 
 # -----------------------------
-# STEP 1 — Load Model & Scaler
+# STEP 1 — Load Dataset
 # -----------------------------
-knn_model = joblib.load("knn_walmart_model.pkl")
-scaler = joblib.load("scaler_walmart.pkl")
+@st.cache_data
+def load_data():
+    df = pd.read_csv("Walmart.csv")  # ضع ملفك في نفس فولدر app.py
+    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
+    df['Year'] = df['Date'].dt.year
+    df['Month'] = df['Date'].dt.month
+    df['Week'] = df['Date'].dt.isocalendar().week.astype(int)
+    return df
+
+df = load_data()
 
 # -----------------------------
-# STEP 2 — App Layout
+# STEP 2 — Prepare Features & Target
 # -----------------------------
+features = ['Store', 'Holiday_Flag', 'Temperature', 'Fuel_Price',
+            'CPI', 'Unemployment', 'Year', 'Month', 'Week']
+target = 'Weekly_Sales'
 
+X = df[features]
+y = df[target]
+
+# Scale features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# -----------------------------
+# STEP 3 — Train Tuned KNN
+# -----------------------------
+@st.cache_resource
+def train_model(X_scaled, y):
+    knn = KNeighborsRegressor(n_neighbors=3, weights='distance')
+    knn.fit(X_scaled, y)
+    return knn
+
+knn_model = train_model(X_scaled, y)
+
+# -----------------------------
+# STEP 4 — Streamlit Layout
+# -----------------------------
 # Sidebar: Project Info
 st.sidebar.header("About This Project")
 st.sidebar.info("""
 This app predicts **Weekly Sales** for Walmart stores using a **KNN Regression model**.  
-You can adjust the input features in the main page and get real-time predictions.  
+Adjust the input features on the main page and get real-time predictions.  
+
 - Model trained on historical Walmart dataset  
-- Features include Store info, Holiday flag, Temperature, Fuel Price, CPI, Unemployment, Year, Month, Week
+- Features include Store, Holiday flag, Temperature, Fuel Price, CPI, Unemployment, Year, Month, Week
 """)
 
 # Main Page: Title
 st.title("Walmart Weekly Sales Prediction")
 
-# -----------------------------
-# STEP 3 — Feature Inputs
-# -----------------------------
+# Feature Inputs
 st.subheader("Input Features")
 
-# Define features and default values
 feature_defaults = {
     'Store': 1,
     'Holiday_Flag': 0,
@@ -43,13 +75,10 @@ feature_defaults = {
     'Week': 1
 }
 
-# Store user inputs in dictionary
 user_inputs = {}
 
-# Create input widgets in main page
 for feature, default in feature_defaults.items():
     if feature in ['Store', 'Holiday_Flag', 'Year', 'Month', 'Week']:
-        # Integer inputs
         user_inputs[feature] = st.number_input(
             label=feature,
             min_value=0,
@@ -58,7 +87,6 @@ for feature, default in feature_defaults.items():
             step=1
         )
     else:
-        # Float inputs
         user_inputs[feature] = st.number_input(
             label=feature,
             min_value=0.0,
@@ -68,17 +96,18 @@ for feature, default in feature_defaults.items():
             format="%.2f"
         )
 
-# Convert inputs to DataFrame
 input_df = pd.DataFrame(user_inputs, index=[0])
 
 # -----------------------------
-# STEP 4 — Scale Inputs & Predict
+# STEP 5 — Scale & Predict
 # -----------------------------
 input_scaled = scaler.transform(input_df)
 prediction = knn_model.predict(input_scaled)[0]
 
-# -----------------------------
-# STEP 5 — Display Prediction
-# -----------------------------
+# Display prediction
 st.subheader("Predicted Weekly Sales")
 st.success(f"${prediction:,.2f}")
+
+# Optional: Show dataset sample
+if st.checkbox("Show Dataset Sample"):
+    st.dataframe(df.head(10))
